@@ -71,6 +71,40 @@ If PowerShell blocks virtual-environment activation, use the appropriate executi
 4. Add MCP integration, tracing, and an observability view.
 5. Add adversarial tests and progressively stronger isolation.
 
+## Structured task contract (milestone 2)
+
+The next milestone introduces a validated request contract and an explicit execution lifecycle. It is currently a contract/state-machine layer; the Docker runner is not yet driven by arbitrary task requests.
+
+A task request contains:
+
+- `task_id`: 1-64 character safe identifier
+- `task_type`: currently `command`
+- `command`: an array of arguments (not a shell command string)
+- `input_files`: relative POSIX paths mapped to text content
+- `resource_limits`: bounded timeout, memory, CPU, and PID limits
+
+Example:
+
+```json
+{
+  "task_id": "task-001",
+  "task_type": "command",
+  "command": ["python", "-m", "pytest", "-q"],
+  "input_files": {"tests/test_example.py": "def test_example(): assert True"},
+  "resource_limits": {"timeout_seconds": 20, "memory_mb": 256, "cpu_cores": 0.5, "pids": 64}
+}
+```
+
+The lifecycle permits only these transitions:
+
+```text
+created -> validated -> running -> succeeded | failed | timed_out | cancelled
+    |          |           |
+    +----------+-----------+-> failed or cancelled where applicable
+```
+
+Invalid fields, unsafe input paths, unbounded resource requests, and illegal state transitions are rejected before execution. The next step is wiring these contracts into workspace creation and Docker execution.
+
 ## Security scope and limitations
 
 This is an educational local MVP, **not** a hardened multi-tenant environment for running hostile code. Docker containers share the host kernel. Do not mount sensitive host paths, expose Docker credentials/socket, or pass secrets into untrusted tasks. Stronger isolation (for example, microVMs), hardened syscall policies, egress controls, image provenance, and adversarial escape testing are future work.
