@@ -3,6 +3,7 @@ import json
 import os
 import sys
 
+from agent_playground.agent import AgentError, run_agent
 from agent_playground.evaluator import expected_demo_failure, security_checks_passed
 from agent_playground.harness import HarnessError, ensure_image, run_demo, run_security_probe
 
@@ -61,7 +62,6 @@ def main() -> int:
             print('ERROR: install the optional agent dependency with: python -m pip install -e ".[agent]"',
                   file=sys.stderr)
             return 2
-        from agent_playground.agent import AgentError, run_agent
 
         result = run_agent(OpenAI(), args.prompt, args.model)
         print(json.dumps(result.to_dict(), indent=2))
