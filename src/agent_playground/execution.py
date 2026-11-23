@@ -1,25 +1,45 @@
 """Contract-driven Docker task execution."""
 from __future__ import annotations
-import os, tempfile, time, uuid
+
+import os
+import tempfile
+import time
+import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any
+
 from agent_playground import harness
 from agent_playground.contracts import TaskRequest
 from agent_playground.lifecycle import ExecutionLifecycle, ExecutionStatus, TaskResult
 
+
 def _safe_runs_dir() -> Path:
+    """Create a private host parent for temporary task workspaces."""
     root = harness.ROOT.resolve()
     playground, runs = root / ".playground", root / ".playground" / "runs"
     for directory in (playground, runs):
         if directory.exists() and directory.is_symlink():
             raise OSError(f"workspace parent must not be a symlink: {directory}")
-        directory.mkdir(exist_ok=True)
+        directory.mkdir(mode=0o700, exist_ok=True)
         if not directory.resolve(strict=True).is_relative_to(root):
             raise OSError("workspace parent resolves outside the repository")
+        # Keep host-side workspace names and contents private. Docker only sees
+        # the individual workspace bind mount, whose permissions are adjusted
+        # separately for the sandbox's fixed non-root UID.
+        try:
+            directory.chmod(0o700)
+        except OSError:
+            pass
     return runs
 
+
 def _write_inputs(workspace: Path, files: dict[str, str]) -> None:
+    """Write validated relative files with permissions usable by UID 10001."""
     root = workspace.resolve(strict=True)
+    # TemporaryDirectory is normally 0700 for the host owner. The sandbox runs
+    # as UID 10001, so make this isolated bind-mounted directory traversable and
+    # writable; its parent remains private to the host user.
+    root.chmod(0o777)
     for name, content in files.items():
         if not isinstance(name, str) or "\\" in name or ":" in name:
             raise ValueError(f"unsafe input file path: {name!r}")
@@ -29,17 +49,20 @@ def _write_inputs(workspace: Path, files: dict[str, str]) -> None:
         ):
             raise ValueError(f"unsafe input file path: {name!r}")
         target = root.joinpath(*relative.parts)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        target.parent.mkdir(mode=0o777, parents=True, exist_ok=True)
         if not target.parent.resolve(strict=True).is_relative_to(root) or target.is_symlink():
             raise ValueError(f"input file path escapes workspace: {name!r}")
+        target.parent.chmod(0o777)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(target, flags, 0o600)
+        fd = os.open(target, flags, 0o666)
         try:
             with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
                 stream.write(content)
         except BaseException:
             target.unlink(missing_ok=True)
             raise
+        target.chmod(0o666)
+
 
 def run_task(request: TaskRequest | dict[str, Any]) -> TaskResult:
     """Validate, execute, and return a terminal structured result."""
@@ -49,6 +72,7 @@ def run_task(request: TaskRequest | dict[str, Any]) -> TaskResult:
         request = TaskRequest.from_dict(request.to_dict())
     else:
         raise ValueError("request must be a TaskRequest or task request object")
+
     lifecycle = ExecutionLifecycle(request.task_id).transition(ExecutionStatus.VALIDATED)
     started = time.monotonic()
     name = f"agent-task-{uuid.uuid4().hex[:20]}"
