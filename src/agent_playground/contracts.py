@@ -20,14 +20,14 @@ class ResourceLimits:
     pids: int = 64
 
     def __post_init__(self) -> None:
-        if not 1 <= self.timeout_seconds <= 300:
-            raise ValueError("timeout_seconds must be between 1 and 300")
-        if not 32 <= self.memory_mb <= 2048:
-            raise ValueError("memory_mb must be between 32 and 2048")
-        if not 0.1 <= self.cpu_cores <= 4.0:
+        if not isinstance(self.timeout_seconds, int) or isinstance(self.timeout_seconds, bool) or not 1 <= self.timeout_seconds <= 300:
+            raise ValueError("timeout_seconds must be an integer between 1 and 300")
+        if not isinstance(self.memory_mb, int) or isinstance(self.memory_mb, bool) or not 32 <= self.memory_mb <= 2048:
+            raise ValueError("memory_mb must be an integer between 32 and 2048")
+        if not isinstance(self.cpu_cores, (int, float)) or isinstance(self.cpu_cores, bool) or not 0.1 <= self.cpu_cores <= 4.0:
             raise ValueError("cpu_cores must be between 0.1 and 4.0")
-        if not 1 <= self.pids <= 256:
-            raise ValueError("pids must be between 1 and 256")
+        if not isinstance(self.pids, int) or isinstance(self.pids, bool) or not 1 <= self.pids <= 256:
+            raise ValueError("pids must be an integer between 1 and 256")
 
 
 @dataclass(frozen=True)
@@ -41,16 +41,26 @@ class TaskRequest:
     resource_limits: ResourceLimits = field(default_factory=ResourceLimits)
 
     def __post_init__(self) -> None:
-        if not _TASK_ID.fullmatch(self.task_id):
+        if not isinstance(self.task_id, str) or not _TASK_ID.fullmatch(self.task_id):
             raise ValueError("task_id must be 1-64 safe identifier characters")
         if self.task_type != "command":
             raise ValueError("task_type must be 'command' in this MVP")
-        if not self.command or any(not isinstance(part, str) or not part or "\\x00" in part for part in self.command):
+        if not isinstance(self.command, tuple) or not self.command or any(
+            not isinstance(part, str) or not part or "\x00" in part for part in self.command
+        ):
             raise ValueError("command must be a non-empty tuple of non-empty strings")
+        if not isinstance(self.input_files, dict):
+            raise ValueError("input_files must be an object")
         for name, content in self.input_files.items():
+            if not isinstance(name, str):
+                raise ValueError("input file names must be strings")
             path = PurePosixPath(name)
-            if (not name or "\\\\" in name or path.is_absolute()
-                    or any(part in ("", ".", "..") for part in path.parts)):
+            if (
+                not name
+                or "\\" in name
+                or path.is_absolute()
+                or any(part in ("", ".", "..") for part in path.parts)
+            ):
                 raise ValueError(f"input file path must be a safe relative POSIX path: {name!r}")
             if not isinstance(content, str):
                 raise ValueError(f"input file content for {name!r} must be text")
