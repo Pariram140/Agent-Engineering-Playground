@@ -2,113 +2,51 @@
 
 A build-first learning project for understanding agent harness engineering, execution sandboxing, evaluation, observability, and security.
 
-## Project approach
+## Sandbox controls
+- Non-root container user, network disabled, read-only container root filesystem
+- Explicit writable /workspace, dropped Linux capabilities, and no-new-privileges
+- Per-request CPU, memory, PID, and wall-clock timeout limits bounded by the contract
+- Disposable named containers and temporary workspaces
 
-The first milestone uses a **deterministic Python harness without an LLM**. This isolates and validates execution controls before adding model-driven behavior.
-
-- **Control plane (host):** creates a run workspace, starts the sandbox, applies limits, and collects results.
-- **Execution plane (Docker):** runs task code in a disposable container as a non-root user.
-- **Evaluator:** checks process results and expected security properties.
-- **Human review:** inspects outputs before any future integration or deployment step.
-
-## Initial sandbox controls
-
-- Non-root container user
-- Network disabled
-- Read-only container root filesystem
-- Explicit writable `/workspace`
-- Linux capabilities dropped
-- `no-new-privileges`
-- CPU, memory, PID, and execution-time limits
-- Disposable container lifecycle
-
-## Prerequisites
-
-- Windows 10/11 with PowerShell
-- Python 3.10+
-- Docker Desktop using Linux containers
-
-## Local setup
-
-From the repository root:
+## Setup
+Windows 10/11 with PowerShell, Python 3.10+, and Docker Desktop using Linux containers:
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
-```
-
-Run the host-side unit tests:
-
-```powershell
 python -m pytest -q
 ```
 
-Build and verify the Docker sandbox:
-
+Build and verify:
 ```powershell
 python -m agent_playground build
 python -m agent_playground security-check
 python -m agent_playground demo
 ```
 
-Or run the full sequence with the PowerShell helper:
+## Task request execution
+Use TaskRequest (or its JSON-friendly dictionary form) with run_task. Commands are argument arrays passed directly to Docker without a shell. Input files are safely created inside a unique temporary workspace, which is removed after execution.
 
-```powershell
-.\verify-sandbox.ps1
+```python
+from agent_playground.contracts import TaskRequest, ResourceLimits
+from agent_playground.execution import run_task
+
+request = TaskRequest(
+    task_id="task-001",
+    task_type="command",
+    command=("python", "-c", "print(open('input.txt').read())"),
+    input_files={"input.txt": "hello"},
+    resource_limits=ResourceLimits(timeout_seconds=20, memory_mb=256, cpu_cores=0.5, pids=64),
+)
+result = run_task(request)
+print(result.to_dict())
 ```
 
-The demo contains an intentionally defective discount function. The harness succeeds when it correctly captures the expected pytest failure; this demonstrates failure reporting, not a passing business-logic test.
+The result contains task_id, terminal status (succeeded, failed, timed_out, or cancelled), exit code when available, captured stdout/stderr, duration, and an error when applicable. Invalid contracts raise ValueError before Docker starts. Valid requests that fail to prepare or execute return a structured failed result.
 
-If PowerShell blocks virtual-environment activation, use the appropriate execution-policy setting for your environment or invoke `.venv\Scripts\python.exe` directly.
+Resource limits are bounded: timeout 1–300 seconds, memory 32–2048 MiB, CPU 0.1–4 cores, and PIDs 1–256. Every task retains the existing Docker isolation settings.
 
-## Learning roadmap
-
-1. Validate deterministic sandbox execution and security checks.
-2. Add structured task/result contracts and stronger evaluation.
-3. Add an LLM agent that selects tools through the harness.
-4. Add MCP integration, tracing, and an observability view.
-5. Add adversarial tests and progressively stronger isolation.
-
-## Structured task contract (milestone 2)
-
-The next milestone introduces a validated request contract and an explicit execution lifecycle. It is currently a contract/state-machine layer; the Docker runner is not yet driven by arbitrary task requests.
-
-A task request contains:
-
-- `task_id`: 1-64 character safe identifier
-- `task_type`: currently `command`
-- `command`: an array of arguments (not a shell command string)
-- `input_files`: relative POSIX paths mapped to text content
-- `resource_limits`: bounded timeout, memory, CPU, and PID limits
-
-Example:
-
-```json
-{
-  "task_id": "task-001",
-  "task_type": "command",
-  "command": ["python", "-m", "pytest", "-q"],
-  "input_files": {"tests/test_example.py": "def test_example(): assert True"},
-  "resource_limits": {"timeout_seconds": 20, "memory_mb": 256, "cpu_cores": 0.5, "pids": 64}
-}
-```
-
-The lifecycle permits only these transitions:
-
-```text
-created -> validated -> running -> succeeded | failed | timed_out | cancelled
-    |          |           |
-    +----------+-----------+-> failed or cancelled where applicable
-```
-
-Invalid fields, unsafe input paths, unbounded resource requests, and illegal state transitions are rejected before execution. The next step is wiring these contracts into workspace creation and Docker execution.
-
-## Security scope and limitations
-
-This is an educational local MVP, **not** a hardened multi-tenant environment for running hostile code. Docker containers share the host kernel. Do not mount sensitive host paths, expose Docker credentials/socket, or pass secrets into untrusted tasks. Stronger isolation (for example, microVMs), hardened syscall policies, egress controls, image provenance, and adversarial escape testing are future work.
-
-## Status
-
-The deterministic harness and its security properties are the first milestone. LLM-driven autonomy comes later.
+## Security scope
+This is an educational local MVP, not hardened multi-tenant isolation. Docker shares the host kernel. Do not mount sensitive host paths, expose Docker credentials/socket, or pass secrets into untrusted tasks. Stronger isolation and adversarial escape testing remain future work.
