@@ -12,6 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+agent = ["openai>=1.66.0"]
 
 [project.scripts]
 agent-playground = "agent_playground.cli:main"
