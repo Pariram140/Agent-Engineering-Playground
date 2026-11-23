@@ -4,16 +4,14 @@ A build-first learning project for understanding agent harness engineering, exec
 
 ## Project approach
 
-The first milestone uses a **deterministic Python harness without an LLM**. This isolates and validates the execution controls before adding model-driven behavior.
+The first milestone uses a **deterministic Python harness without an LLM**. This isolates and validates execution controls before adding model-driven behavior.
 
-- **Control plane (host):** accepts a task, creates an isolated run workspace, starts the sandbox, applies limits, and collects results.
+- **Control plane (host):** creates a run workspace, starts the sandbox, applies limits, and collects results.
 - **Execution plane (Docker):** runs task code in a disposable container as a non-root user.
 - **Evaluator:** checks process results and expected security properties.
 - **Human review:** inspects outputs before any future integration or deployment step.
 
 ## Initial sandbox controls
-
-The MVP is designed to apply these controls to task execution:
 
 - Non-root container user
 - Network disabled
@@ -32,15 +30,22 @@ The MVP is designed to apply these controls to task execution:
 
 ## Local setup
 
-Create and activate a virtual environment:
+From the repository root:
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install --upgrade pip
+python -m pip install -e ".[test]"
 ```
 
-Run the project commands:
+Run the host-side unit tests:
+
+```powershell
+python -m pytest -q
+```
+
+Build and verify the Docker sandbox:
 
 ```powershell
 python -m agent_playground build
@@ -48,14 +53,15 @@ python -m agent_playground security-check
 python -m agent_playground demo
 ```
 
-Run host-side tests:
+Or run the full sequence with the PowerShell helper:
 
 ```powershell
-python -m pip install -e ".[test]"
-python -m pytest -q
+.\verify-sandbox.ps1
 ```
 
-If PowerShell blocks virtual-environment activation, use the appropriate execution-policy setting for your environment or invoke the venv Python executable directly.
+The demo contains an intentionally defective discount function. The harness succeeds when it correctly captures the expected pytest failure; this demonstrates failure reporting, not a passing business-logic test.
+
+If PowerShell blocks virtual-environment activation, use the appropriate execution-policy setting for your environment or invoke `.venv\Scripts\python.exe` directly.
 
 ## Learning roadmap
 
@@ -71,4 +77,4 @@ This is an educational local MVP, **not** a hardened multi-tenant environment fo
 
 ## Status
 
-The repository is being built incrementally. The deterministic harness and its security properties are the first milestone; LLM-driven autonomy comes later.
+The deterministic harness and its security properties are the first milestone. LLM-driven autonomy comes later.
