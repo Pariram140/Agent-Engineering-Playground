@@ -22,7 +22,7 @@ jobs:
       - name: Install project and test dependencies
         run: python -m pip install -e ".[test]"
       - name: Run unit tests
-        run: python -m pytest -q
+        run: python -m pytest -q --ignore=tests/test_docker_integration.py
 
   docker-integration:
     runs-on: ubuntu-latest
